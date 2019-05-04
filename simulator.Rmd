@@ -752,10 +752,10 @@ run_simulation <- function(n_sims = 100, n_players = 15, n_werewolves = 3, other
 
 ```{r}
 start_time <- Sys.time()
-# Takes about {10.7} minutes for 7750 simulations (12/s). (werewolf only)
+# Takes about {35} minutes for 1900 simulations (9/s). (werewolf only)
 # Takes about {26.3, 25.8, 28.6} minutes for 19000 simulations (12/s). (werewolf, angel)
 # Takes about {38.1} minutes for 19000 simulations (8.3/s). (werewolf, angel, witch(save))
-name <- "Werewolves, 1 Angel, and Townspeople"
+name <- "Werewolves and Townspeople"
 sims <- expand.grid(n_players = 3:40, n_werewolves = c(1:20)) %>% # 3:40 players, 1:20 werewolves
   filter(n_players > n_werewolves * 2) %>%
   add_column(n_sims = 50) %>% # 50 simulations
@@ -767,6 +767,7 @@ Sys.time() - start_time
 ```
 
 Here's what the structure is like by the way.
+
 ```{r}
 # Each individual game
 # sims$game[[1]]$game[[1]]
@@ -791,9 +792,20 @@ sims_summary <- sims %>%
   ungroup() %>%
   mutate_at(vars(n_players, n_werewolves, n_sims), as.integer) %>%
   print()
+```
 
+
+```{r}
 # The summary is 10 KB. The unnested sims data is 412 MB. 
 write_csv(sims_summary, paste0("simulations/", name, ".csv"))
+```
+
+```{r}
+name <- "Werewolves and Townspeople"
+name <- "Werewolves, 1 Angel, and Townspeople"
+name <- "Werewolves, 1 Angel, 1 Witch (save only), and Townspeople"
+sims_summary <- read_csv(paste0("simulations/", name, ".csv"))
+n_sims <- sims_summary %>% pull(n_sims) %>% sum()
 ```
 
 ```{r}
@@ -803,20 +815,20 @@ ggplot(sims_summary, aes(n_players, n_werewolves, color = werewolf_win_percent))
                         values = c(0, 0.5, 1),
                         limits = c(0, 1),
                         labels = scales::percent) + 
-  scale_x_continuous(limits = c(3, 40)) + 
-  scale_y_continuous(limits = c(1, 20)) + 
+  scale_x_continuous(limits = c(3, 40), breaks = c(3, 10, 20, 30, 40)) + 
+  scale_y_continuous(limits = c(1, 20), breaks = c(1, 5, 10, 15, 20), minor_breaks = NULL) + 
   labs(title = "Who wins in a game of Werewolf?",
-       subtitle = paste("Based on", n_sims, "simulated games"),
+       subtitle = paste("Based on", n_sims, "simulated games (50 per cell)"),
        caption = paste("Roles included:", name),
        x = "Number of players",
        y = "Number of werewolves",
-       color = "Chances that the\nWerewolves Win") + 
+       color = "Werewolves'\nchance at\nwinning") + 
   coord_fixed(1) +
-  theme_classic() + 
-  theme(legend.position = c(0.13, 0.63))
+  theme_bw()
 ```
 
 ```{r}
-ggsave(paste0("plots/", name, ".pdf"), height = 4, width = 8)
+ggsave(paste0("plots/", name, ".pdf"),  height = 4, width = 8)
+# ggsave(paste0("plots/", name, ".jpeg"), height = 4, width = 8, dpi = 300)
 ```
 
