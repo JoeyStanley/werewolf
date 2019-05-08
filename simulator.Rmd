@@ -9,7 +9,19 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+# Intro
+
 This is a simulation of the Warewolf game. I was talking to Kyle for a while on Thursday, April 25, 2019 and I had the epiphany that I can make a Werewolf Game in Shiny now. That'll combine my R skills with the ability to run it from my phone. It's a very different set of R skills, but it might be possible. 
+
+
+```{r, message = FALSE}
+library(tidyverse)
+library(glue)
+library(crayon)
+library(scico)
+```
+
+## Purpose and Goal
 
 There are two, possibly three purposes for this:
 
@@ -21,16 +33,55 @@ There are two, possibly three purposes for this:
 
 This script will serve as a sandbox to help me work out the R stuff. Once I'm done here I'll transfer it over to the Shiny app.
 
-This version of the script includes the following roles:
+## Progress
 
-* Werewolves, Angel, Witch (save only)
+*These roles are already incorporated into the program*
+* Werewolves
+* Angel
+  + Saves others
+* Witch
+  + Save (5/5/19)
+  + Kill (5/7/19)
+  
+## To do
 
-```{r, message = FALSE}
-library(tidyverse)
-library(glue)
-library(crayon)
-library(scico)
-```
+*Roles that add to the logic*
+* Apothecary---easy
+  + water, save, kill, wine
+* Angel
+  + always saves self
+* Town Drunk
+* Extra Werewolf Kills
+  + Alpha Wolf
+  + Big Bad Wolf
+  + Werewolf Cub
+* Independent Werewolf Kills
+  + Lone Wolf
+
+*These have little effects on the logic*
+* Dungeon Master
+* Priest
+* Detective
+* Jester
+* Apothecary---novelty
+  + amnesiac, truth serum
+* Additional Werewolves
+  + Vegetarian Wolf
+  + Traitor
+
+*Chain reaction roles*---These will be difficult to implement because I'd have to add a *lot* of additional code. The Giant and Hunter will be easier, but adding the Lovers will be very difficult. 
+* Giant
+* Hunter
+* Cupid
+* Apothecary---difficult
+  + love potion 
+
+*Switching Roles*---These will be especially difficult to implement. I have no idea how I'll do it to be honest.
+* Silversmith
+* Grave Robber
+* Apprentice
+* Additional Werewolves
+  + Lycanthrope
 
 
 
@@ -867,7 +918,7 @@ Stats:
 
 * In the old version, I could do 19000 simulations in 40 minutes, or about 8.3 games per second.
 
-* With the new version, it takes 55 minutes for 1890 simulations, or 1.75sec per game (like 14 times lower). Yikes. If I want to take this further, I need to really figure out how to cut down on processing time.
+* With the new version, it takes 55 minutes for 1890 simulations, or 1.75sec per game (like 14 times slower). Yikes. If I want to take this further, I need to really figure out how to cut down on processing time.
 
 ```{r}
 start_time <- Sys.time()
