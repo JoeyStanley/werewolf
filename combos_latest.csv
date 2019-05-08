@@ -1,6 +1,6 @@
 combo,compatible,message,result,killer,notes,is_werewolf_victim,is_angel_target,is_witch_save,is_witch_kill
 1,TRUE,{silver Nothing happened to {player_acc}.},live,,,FALSE,FALSE,FALSE,FALSE
-2,TRUE,{player_nom} were {red killed} by the werewolves,die,werewolves,,TRUE,FALSE,FALSE,FALSE
+2,TRUE,{player_nom} were {red killed} by the werewolves.,die,werewolves,,TRUE,FALSE,FALSE,FALSE
 3,TRUE,{player_nom} were benignly {yellow saved} by the Angel.,live,,,FALSE,TRUE,FALSE,FALSE
 4,TRUE,{player_nom} were {yellow attacked} by the werewolves but then {green saved} by the Angel.,live,,,TRUE,TRUE,FALSE,FALSE
 5,FALSE,{red ERROR:} {player_nom} were saved by the Witch with no werewolf attack.,live,,Witch can't save if they're not the werewolf victim.,FALSE,FALSE,TRUE,FALSE
