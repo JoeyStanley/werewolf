@@ -42,6 +42,8 @@ This script will serve as a sandbox to help me work out the R stuff. Once I'm do
 * Witch
   + Save (5/5/19)
   + Kill (5/7/19)
+* Dungeon Master
+  + Puts others in Dunegeon (5/8/19)
   
 ## To do
 
@@ -59,7 +61,6 @@ This script will serve as a sandbox to help me work out the R stuff. Once I'm do
   + Lone Wolf
 
 *These have little effects on the logic*
-* Dungeon Master
 * Priest
 * Detective
 * Jester
@@ -82,6 +83,11 @@ This script will serve as a sandbox to help me work out the R stuff. Once I'm do
 * Apprentice
 * Additional Werewolves
   + Lycanthrope
+  
+*Other small details*---These are optional rules that don't need to be added. They probably have a very small odds on an overall game, but make for fun little Easter egg rules. 
+* Dungeon Master
+  + Themselves always in Dungeon
+  + People in dungeon are immune from Hunter, Town Drunk, and Giant
 
 
 
@@ -111,6 +117,7 @@ new_game <- function(n_players = 12, n_werewolves = 4, other_roles = "default") 
     list_of_roles <- pad_with_townspeople(rep("werewolf", n_werewolves), 
                                           "angel", 
                                           "witch",
+                                          "dungeon master",
                                           end_length = n_players)
   } else if (length(other_roles) == 1 && other_roles == "none") {
     list_of_roles <- pad_with_townspeople(rep("werewolf", n_werewolves),
@@ -134,10 +141,15 @@ new_game <- function(n_players = 12, n_werewolves = 4, other_roles = "default") 
            is_witch_save      = FALSE,
            is_witch_kill      = FALSE,
            
+           is_dungmast_target = FALSE,
+           is_in_dungeon      = FALSE,
+           
            is_voted_off       = FALSE) %>%
     left_join(players_and_roles, by = "player_id") %>%
     select(player_id, role, round_num, is_alive, when_died, cause_of_death, everything())
 }
+new_game() %>% select(player_id, role) %>% distinct() %>% arrange(role) %>% pull(role)
+game <- new_game()
 game <- new_game(other_roles = "none")
 game <- new_game(other_roles = "angel")
 game <- new_game(other_roles = rep("angel", 4), n_werewolves = 3)
@@ -338,6 +350,21 @@ witch_kill_id <- function(game, this_round_num) {
 ```
 
 
+The Dungeon Master puts a random player in the dungeon each night. In the future, I might make it so that they themselves are always in the Dungeon.
+
+```{r}
+dungmast_target_id <- function(game, this_round_num) {
+  available_targets <- game %>%
+    filter(round_num == this_round_num,
+           is.na(cause_of_death)) %>%
+    pull(player_id)
+  
+  n_targets <- 1
+  sample(available_targets, n_targets)
+}
+dungmast_target_id(game, 1)
+```
+
 
 
 
@@ -415,6 +442,22 @@ make_witch_kill <- function(game, this_round_num) {
 make_witch_kill(game, 1)
 ```
 
+```{r}
+put_in_dungeon <- function(game, this_round_num) {
+  
+  # First get the number of angels remaining in the game
+  n_dungmasts <- get_n_role(game, this_round_num, "dungeon master")
+    
+    # If there is more than zero
+    if (n_dungmasts > 0) {
+      game[game$player_id == dungmast_target_id(game, this_round_num) & 
+             game$round_num == this_round_num,"is_dungmast_target"] <- TRUE
+    }
+  game
+}
+put_in_dungeon(game, 1)
+```
+
 
 ```{r}
 everyone_do_their_thing <- function(game, this_round_num, verbose = TRUE) {
@@ -422,7 +465,8 @@ everyone_do_their_thing <- function(game, this_round_num, verbose = TRUE) {
     make_werewolf_victim(this_round_num) %>%
     make_angel_save(this_round_num) %>%
     make_witch_save(this_round_num) %>%
-    make_witch_kill(this_round_num)
+    make_witch_kill(this_round_num) %>%
+    put_in_dungeon(this_round_num)
 }
 everyone_do_their_thing(game, 1)
 ```
@@ -473,6 +517,15 @@ get_witch_kill <- function(game, this_round_num) {
 }
 ```
 
+```{r}
+get_dungmast_target <- function(game, this_round_num) {
+  target_id <- game[game$is_dungmast_target == TRUE & game$round_num == this_round_num,]$player_id
+  
+  # If there was no target, it's "integer(0)", which has a length of 0. Return NA instead.
+  ifelse(length(target_id) > 0, target_id, NA)
+}
+```
+
 
 ## Mark people as dead
 
@@ -498,8 +551,6 @@ make_dead <- function(game, player, this_round_num, cause) {
 
 
 ## Now run the logic
-
-
 
 Now that I've got the `combos_latest.csv` spreadsheet, I have a place where the logic gets worked out. That works perfectly when I'm going through player by player and figuring out what happened *to* them. Right now, when I'm summarizing things, I'm going the opposite way: starting with the attackers and seeing who they target. When I want to summarize the night, it makes more sense to go this way. So, to edisplay this information (and to work out the logic), I'll need two pieces of information:
 
@@ -533,6 +584,7 @@ run_logic <- function(game, this_round_num, verbose = TRUE) {
       angel_target    <- get_angel_target(game, this_round_num)
       witch_save      <- get_witch_save(game, this_round_num)
       witch_kill      <- get_witch_kill(game, this_round_num)
+      dungmast_target <- get_dungmast_target(game, this_round_num)
 
       # For things that happened to them, get that message.
       player_nom <- glue("They")
@@ -541,6 +593,16 @@ run_logic <- function(game, this_round_num, verbose = TRUE) {
         left_join(combos,
                   by = c("is_werewolf_victim", "is_angel_target", "is_witch_save", "is_witch_kill"))
       passive_message <- this_player_this_night$message
+      
+      
+      # Independent events.
+      if (identical(p, dungmast_target)) {
+        if (str_detect(passive_message, "Nothing happened")) {
+          passive_message <- "They were put in the Dungeon."
+        } else {
+          passive_message <- paste(passive_message, "They were also put in the Dungeon.")
+        }
+      }
 
       # Only print if something happened.
       if (!str_detect(passive_message, "Nothing happened")) {
@@ -587,7 +649,7 @@ for (i in 1:6) {
 
 # Day time phase
 
-The daytime phase is going to be simpler. Cast the votes. For now, the vote will be random. Down the road, I'll need to actually keep track of all votes. For roles like the Prince, this is necessary. Also, in the summary I'll be able to see who voted for whom. Furthermore, in the simulations, I'll need to make sure that werewolves don't vote each other out.
+The daytime phase is going to be simpler. Cast the votes. For now, the vote will be random. Down the road, I'll need to actually keep track of all votes (making sure to prevent people in Dungeon from voting). For roles like the Prince, this is necessary. Also, in the summary I'll be able to see who voted for whom. Furthermore, in the simulations, I'll need to make sure that werewolves don't vote each other out.
 
 ```{r}
 cast_votes <- function(game, this_round_num) {
@@ -744,24 +806,6 @@ game <- simulate_game()
 
 ## Summarize the game
 
-```{r}
-same_person <- function(a, b) {
-  if (is.na(a)) {
-    return(FALSE)
-  }
-  
-  if (is.na(b)) {
-    return(FALSE)
-  }
-  
-  if (a == b) {
-    return(TRUE)
-  } else {
-    return(FALSE)
-  }
-}
-```
-
 
 ```{r}
 print_game_summary <- function(game) {
@@ -783,6 +827,7 @@ print_game_summary <- function(game) {
         angel_target    <- get_angel_target(game, n)
         witch_save      <- get_witch_save(game, n)
         witch_kill      <- get_witch_kill(game, n)
+        dungmast_target <- get_dungmast_target(game, n)
         
         # Start with a vector of length 3. Later, the second element will be deleted if needed.
         messages <- list("{\"  \"}Round {n}:",
@@ -792,9 +837,9 @@ print_game_summary <- function(game) {
         # Active
         if (this_players_role == "werewolf") {
           if (!is.na(werewolf_victim)) {
-            if (same_person(werewolf_victim, angel_target)) {
+            if (identical(werewolf_victim, angel_target)) {
               messages <- append(messages, "{\"    \"}They {yellow tried} to kill Player {werewolf_victim} but were {yellow foiled} by the Angel.\n")  
-            } else if (same_person(werewolf_victim, witch_save)) {
+            } else if (identical(werewolf_victim, witch_save)) {
               messages <- append(messages, "{\"    \"}They {yellow tried} to kill Player {werewolf_victim} but were {yellow foiled} by the Witch.\n")  
             } else {
               messages <- append(messages, "{\"    \"}They {red killed} Player {werewolf_victim}.\n")  
@@ -829,7 +874,7 @@ print_game_summary <- function(game) {
           } else {
              messages <- append(messages, "{\"    \"}They chose to {green save} Player {witch_save} from the werewolves.\n")
           }
-          
+        
           if (is.na(witch_kill)) {
             has_already_killd <- game %>%
               filter(round_num < n,
@@ -843,6 +888,10 @@ print_game_summary <- function(game) {
           } else {
             messages <- append(messages, "{\"    \"}They chose to {red kill} Player {witch_kill}.\n")
           }
+          
+          
+        } else if (this_players_role == "dungeon master") {
+            messages <- append(messages, "{\"    \"}They put Player {dungmast_target} in the dungeon\n")
         }
         
         
