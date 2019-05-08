@@ -21,15 +21,9 @@ There are two, possibly three purposes for this:
 
 This script will serve as a sandbox to help me work out the R stuff. Once I'm done here I'll transfer it over to the Shiny app.
 
-This version of the script includes the following features:
+This version of the script includes the following roles:
 
-* Werewolves
-
-* Angel
-
-* Simulations
-
-The goal for this version is to incorporate multiple Angels.
+* Werewolves, Angel, Witch (save only)
 
 ```{r, message = FALSE}
 library(tidyverse)
@@ -43,7 +37,6 @@ library(scico)
 # Game setup
 
 Eventually, I'll make this dynamic, but for now I'll hard-code it in.
-
 
 ## Assign the roles
 
@@ -113,11 +106,13 @@ get_one_player <- function(game, id) {
 And here's a helper function to extract just one of those nights.
 
 ```{r}
-get_night <- function(game, this_round_num) {
+get_round <- function(game, this_round_num) {
   game %>%
     filter(round_num == this_round_num)
 }
 ```
+
+A generalized function to quickly count how many living players have a particular role. Useful for when determining whether something should happen at night.
 
 ```{r}
 get_n_role <- function(game, this_round_num, r) {
@@ -129,7 +124,41 @@ get_n_role <- function(game, this_round_num, r) {
 }
 ```
 
+A function to look up what player has a particular role. Works well for identifying self.
 
+```{r}
+get_player_id_from_role <- function(game, r) {
+  this_person <- game %>% 
+    filter(round_num == 1,
+           role == r)
+  
+  if (nrow(this_person) > 1) {
+    message(paste0("There are multiple people with the role", r, "and I don't know what to do!"))
+    crash
+  } else if (nrow(this_person) == 1) {
+    return(this_person$player_id)
+  } else {
+    return(NA)
+  }
+}
+```
+
+```{r}
+get_role_from_player_id <- function(game, p) {
+  this_person <- game %>% 
+    filter(round_num == 1,
+           player_id == p)
+  
+  if (nrow(this_person) > 1) {
+    message(paste0("There are multiple rows with the player ID", p, "and I don't know what to do!"))
+    crash
+  } else if (nrow(this_person) == 1) {
+    return(this_person$role)
+  } else {
+    return(NA)
+  }
+}
+```
 
 
 
@@ -138,6 +167,11 @@ get_n_role <- function(game, this_round_num, r) {
 ## Functions for nighttime roles
 
 I've got to create separate functions for each role. For now I'll keep it simple.
+
+
+
+
+The werewolves attack a random player each night.
 
 ```{r}
 werewolf_attack_id <- function(game, this_round_num) {
@@ -154,6 +188,9 @@ werewolf_attack_id <- function(game, this_round_num) {
 werewolf_attack_id(game, 1)
 ```
 
+
+The Angel saves a random player each night. In the future, I might make it so that they themselves are always saved.
+
 ```{r}
 angel_save_id <- function(game, this_round_num) {
   available_targets <- game %>%
@@ -167,6 +204,8 @@ angel_save_id <- function(game, this_round_num) {
 angel_save_id(game, 1)
 ```
 
+The Witch gets a chance to save someone if they haven't done so already. Odds are 1 in 3 that they actually decide to use their power. They 
+
 ```{r}
 witch_save_id <- function(game, this_round_num) {
 
@@ -176,21 +215,65 @@ witch_save_id <- function(game, this_round_num) {
     return(NA)
   }
   
-  # Don't autmatically save the first round: make it a 1 in 3 shot.
-  if (sample(3, 1) != 1) {
-    return(NA)
-  }
-  
-  # If we've made it here, that means thw Witch will save someone.
-  
   # Look for the available targts.
   available_targets <- game %>%
     filter(round_num == this_round_num,
            is.na(cause_of_death),
 
            # Only werewolf victims, but only if the Angel hasn't already saved them.
-           is_werewolf_victim,
-           !is_angel_target) %>%
+           is_werewolf_victim == TRUE,
+           is_angel_target == FALSE) %>%
+    pull(player_id)
+  
+  # This might fix a bug.
+  if (length(available_targets) == 0) {
+    return(NA)
+  }
+  
+  # Always save themselves.
+  self_id <- get_player_id_from_role(game, "witch")
+  if (self_id %in% available_targets) {
+    return(self_id)
+    
+    
+    # This is the person they'll save if it's determined they will save someone.
+  } else {
+    potential_saved_person <- available_targets
+    # Down the road, make it a random sample, but be careful: it'll do weird things when there's just one sample(available_targets, 1)
+  }
+  
+  # Don't autmatically save someone else: make it a 1 in 3 shot.
+  if (sample(3, 1) == 1) {
+    return(potential_saved_person)
+  }
+  
+  # If we've made it here, that means the Witch won't save anyone.
+  return(NA)
+}
+```
+
+Witch will kill someone 1 in 3 times. It's theoretically possible to kill themselves. 
+
+```{r}
+witch_kill_id <- function(game, this_round_num) {
+
+  # If the witch has already killed someone skip this.
+  witch_has_killed <- nrow(filter(game, is_witch_kill == TRUE)) > 0
+  if (witch_has_killed == TRUE) {
+    return(NA)
+  }
+  
+  # Don't autmatically kill the first round: make it a 1 in 3 shot.
+  if (sample(3, 1) != 1) {
+    return(NA)
+  }
+  
+  # If we've made it here, that means the Witch will kill someone.
+  
+  # Look for the available targts (anyone but themselves)
+  available_targets <- game %>%
+    filter(round_num == this_round_num,
+           is.na(cause_of_death)) %>%
     pull(player_id)
 
   # Use this syntax because the result might have a length of zero.
@@ -200,10 +283,8 @@ witch_save_id <- function(game, this_round_num) {
   } else {
     return(NA)
   }
-
 }
 ```
-
 
 
 
@@ -263,13 +344,34 @@ make_witch_save <- function(game, this_round_num) {
 make_witch_save(game, 1)
 ```
 
+```{r}
+make_witch_kill <- function(game, this_round_num) {
+  
+  # First get the number of angels remaining in the game
+  n_witches <- get_n_role(game, this_round_num, "witch")
+  
+  # Check if there is one first, because it might be NA.
+  witch_kill <- witch_kill_id(game, this_round_num)
+  
+  # If there is more than zero
+  if (n_witches > 0 && !is.na(witch_kill)) {
+    
+    game[game$player_id == witch_kill & 
+           game$round_num == this_round_num,"is_witch_kill"] <- TRUE
+  }
+  game
+}
+make_witch_kill(game, 1)
+```
+
 
 ```{r}
 everyone_do_their_thing <- function(game, this_round_num, verbose = TRUE) {
   game %>%
     make_werewolf_victim(this_round_num) %>%
     make_angel_save(this_round_num) %>%
-    make_witch_save(this_round_num)
+    make_witch_save(this_round_num) %>%
+    make_witch_kill(this_round_num)
 }
 everyone_do_their_thing(game, 1)
 ```
@@ -311,6 +413,15 @@ get_witch_save <- function(game, this_round_num) {
 }
 ```
 
+```{r}
+get_witch_kill <- function(game, this_round_num) {
+  target_id <- game[game$is_witch_kill == TRUE & game$round_num == this_round_num,]$player_id
+  
+  # If there was no target, it's "integer(0)", which has a length of 0. Return NA instead.
+  ifelse(length(target_id) > 0, target_id, NA)
+}
+```
+
 
 ## Mark people as dead
 
@@ -333,105 +444,67 @@ make_dead <- function(game, player, this_round_num, cause) {
 ```
 
 
-## Messages
-
-```{r}
-werewolf_victim_message <- function(game, this_round_num) {
-  if (length(get_werewolf_victim(game, this_round_num)) == 1) {
-    m <- glue_col("Oh no! Player {get_werewolf_victim(game, this_round_num)} was {red killed} by the werewolves!")
-  } else {
-    m <- glue_col("{red There are more than two werewolf victims and I'm not sure what to do!}")
-  }
-  m
-}
-```
-
-```{r}
-angel_save_message <- function(game, this_round_num, success = FALSE) {
-  
-  angel_target    <- get_angel_target(game, this_round_num)
-  werewolf_victim <- get_werewolf_victim(game, this_round_num)
-  
-  if (!is.na(angel_target) & length(angel_target) > 1) {
-    m <- glue_col("{red There are more than two Angel saves and I'm not sure what to do!}")
-    
-    # If the angel was successful in their save
-  } else if (success) {
-    m <- glue_col("Player {werewolf_victim} was {yellow attacked} by the werewolves but was {green saved} by the Angel!")
-    
-    # If the save happened but with no consequence
-  } else {
-    m <- glue_col("Player {angel_target} was {yellow saved} by the Angel but it had no effect.")
-  }
-  m
-}
-```
-
-```{r}
-witch_save_message <- function(game, this_round_num) {
-  
-  werewolf_target <- get_werewolf_victim(game, this_round_num)
-  witch_save <- get_witch_save(game, this_round_num)
-  
-  m <- glue_col("Player {werewolf_target} was attacked by the werewolves but was then {green saved} by the Witch!")
-}
-```
-
 
 
 ## Now run the logic
 
-```{r}
-same_person <- function(a, b) {
-  if (is.na(a)) {
-    return(FALSE)
-  }
-  
-  if (is.na(b)) {
-    return(FALSE)
-  }
-  
-  if (a == b) {
-    return(TRUE)
-  } else {
-    return(FALSE)
-  }
-}
-```
 
 
+Now that I've got the `combos_latest.csv` spreadsheet, I have a place where the logic gets worked out. That works perfectly when I'm going through player by player and figuring out what happened *to* them. Right now, when I'm summarizing things, I'm going the opposite way: starting with the attackers and seeing who they target. When I want to summarize the night, it makes more sense to go this way. So, to edisplay this information (and to work out the logic), I'll need two pieces of information:
+
+1. Who the person targetted and the nature of that target.
+
+1. What else happened to that target.
+
+That second part is taken care of with the combos information.
+
+I'm still trying to figure out if I should loop through by person or by role. I think by person is easier, and it will allow for multiples in the future I think. 
+
+Update: Okay, so I think I've done it. The problem: the game is *waaaaay* slower. Like it went from about 8 games a second to 1.5. I think the joining is very much slower than nested if else statements. 
+
 ```{r}
+combos <- read_csv("combos_latest.csv")
 run_logic <- function(game, this_round_num, verbose = TRUE) {
   
-  angel_target    <- get_angel_target(game, this_round_num)
-  werewolf_victim <- get_werewolf_victim(game, this_round_num)
-  witch_save      <- get_witch_save(game, this_round_num)
-  
-  # If the werewolves and angel target the same person
-  if (same_person(werewolf_victim, angel_target)) {
-    if (verbose) { print(angel_save_message(game, this_round_num, success = TRUE)) }
+  for (p in get_round(game, this_round_num)$player_id) {
 
-    # The Witch saves from the werewolf attack
-  } else if (same_person(werewolf_victim, witch_save)) {
-    if (verbose) { print(witch_save_message(game, this_round_num)) }
-    
-    # Werewolf attack goes through.
-  } else {
-    if (verbose) {
-      print(werewolf_victim_message(game, this_round_num))
-      
-      if (get_n_role(game, this_round_num, "angel") > 0) { 
-        print(angel_save_message(game, this_round_num, success = FALSE)) 
+    this_players_role <- game[game$player_id %in% p,]$role[[1]]
+    player_message <- glue_col("{blue Player {str_pad(p, side = 'left', width = 2)}} is a {blue {this_players_role}}") %>%
+      str_pad(width = 45, side = "right")
+
+    this_player_this_night <- game %>%
+      filter(round_num == this_round_num,
+             player_id == p)
+    if (this_player_this_night$is_alive) {
+
+      # Get all the information
+      werewolf_victim <- get_werewolf_victim(game, this_round_num)
+      angel_target    <- get_angel_target(game, this_round_num)
+      witch_save      <- get_witch_save(game, this_round_num)
+      witch_kill      <- get_witch_kill(game, this_round_num)
+
+      # For things that happened to them, get that message.
+      player_nom <- glue("They")
+      player_acc <- glue("them")
+      this_player_this_night <- this_player_this_night %>%
+        left_join(combos,
+                  by = c("is_werewolf_victim", "is_angel_target", "is_witch_save", "is_witch_kill"))
+      passive_message <- this_player_this_night$message
+
+      # Only print if something happened.
+      if (!str_detect(passive_message, "Nothing happened")) {
+        if (verbose) { print(glue_col(player_message, passive_message)) }
       }
-    }
-    
-    game <- game %>%
-      make_dead(werewolf_victim, this_round_num, "werewolves")
-    
-  }
 
+      if (this_player_this_night$result == "die") {
+        game <- game %>%
+          make_dead(p, this_round_num, cause = this_player_this_night$killer)
+      }
+
+    }
+  }
   game
-}
+} 
 ```
 
 
@@ -445,6 +518,8 @@ night <- function(game, this_round_num, verbose = TRUE) {
     everyone_do_their_thing(this_round_num, verbose) %>%
     run_logic(this_round_num, verbose)
 }
+new_game() %>%
+  night(1)
 ```
 
 This means I can loop it.
@@ -485,6 +560,8 @@ make_voting_victim <- function(game, this_round_num, player) {
 
 And a helper function to extract the person being voted off.
 
+TODO: Make the voting less random. Nominate two random players, but make it so werewolves don't vote for their own.
+
 ```{r}
 get_voting_victim <- function(game, this_round_num) {
   victim_id <- game[game$is_voted_off == TRUE & game$round_num == this_round_num,]$player_id
@@ -496,8 +573,12 @@ get_voting_victim <- function(game, this_round_num) {
 
 ```{r}
 voted_off_message <- function(game, this_round_num) {
-  if (length(get_voting_victim(game, this_round_num)) == 1) {
-    m <- glue_col("Player {get_voting_victim(game, this_round_num)} was {red voted off}!")
+  
+  voting_victim <- get_voting_victim(game, this_round_num)
+  their_role <- get_role_from_player_id(game, voting_victim)
+  
+  if (length(voting_victim) == 1) {
+    m <- glue_col("{blue Player {voting_victim}} ({blue {their_role}}) was {red voted off}!")
   } else {
     m <- glue_col("{red There are more than two voting victims and I'm not sure what to do!}")
   }
@@ -543,19 +624,19 @@ check_for_game_over <- function(game, this_round_num, verbose = TRUE) {
   
   if (n_remaining_werewolves >= n_remaining_townspeople) {
     if (verbose) {
-      print(glue_col("{green Game over!} Of the {n_remaining_players} people left, {n_remaining_werewolves} are werewolves, meaning they outnumber everyone else and they win!"))
+      print(glue_col("{\"     \"}{green Game over!} Of the {n_remaining_players} people left, {n_remaining_werewolves} are werewolves, meaning they outnumber everyone else and they win!"))
     }
     return(TRUE)
     
   } else if (n_remaining_werewolves == 0) {
     if (verbose) {
-      print(glue_col("{green Game over!} The werewolves have been eliminated! Just {n_remaining_townspeople} people remain."))
+      print(glue_col("{\"     \"}{green Game over!} The werewolves have been eliminated! Just {n_remaining_townspeople} people remain."))
     }
     return(TRUE)
     
   } else {
     if (verbose) {
-      print(glue("{n_remaining_werewolves} werewolves, {n_remaining_townspeople} townspeople, and {n_remaining_players} total."))
+      print(glue_col("{\"     \"}{silver Current Status:} {n_remaining_werewolves} werewolves, {n_remaining_townspeople} townspeople, and {n_remaining_players} total."))
     }
     return(FALSE)
   }
@@ -613,20 +694,44 @@ game <- simulate_game()
 ## Summarize the game
 
 ```{r}
+same_person <- function(a, b) {
+  if (is.na(a)) {
+    return(FALSE)
+  }
+  
+  if (is.na(b)) {
+    return(FALSE)
+  }
+  
+  if (a == b) {
+    return(TRUE)
+  } else {
+    return(FALSE)
+  }
+}
+```
+
+
+```{r}
 print_game_summary <- function(game) {
+  
+  # Go through player by player
   for (p in unique(game$player_id)) {
-    this_players_role <- game[game$player == p,]$role[[1]]
+    this_players_role <- game[game$player_id %in% p,]$role[[1]]
     print(glue_col("{blue Player {p}} was a {blue {this_players_role}}"))
     
+    # Go through round by round
     this_players_info <- game %>% filter(player_id == p)
     for (n in this_players_info$round_num) {
       
       this_player_this_night <- this_players_info %>% filter(round_num == n)
       if (this_player_this_night$is_alive) {
         
+        # Get all the information
         werewolf_victim <- get_werewolf_victim(game, n)
         angel_target    <- get_angel_target(game, n)
         witch_save      <- get_witch_save(game, n)
+        witch_kill      <- get_witch_kill(game, n)
         
         # Start with a vector of length 3. Later, the second element will be deleted if needed.
         messages <- list("{\"  \"}Round {n}:",
@@ -643,9 +748,12 @@ print_game_summary <- function(game) {
             } else {
               messages <- append(messages, "{\"    \"}They {red killed} Player {werewolf_victim}.\n")  
             }
+            
+            # If there is not a werewolf victim.
           } else {
-            messages <- append(messages, "{\"    \"}{yellow for some reason there wasn't a werewolf victim???\n")
+            messages <- append(messages, "{\"    \"}{yellow for some reason there wasn't a werewolf victim???}\n")
           }
+          
           
         } else if (this_players_role == "angel") {
           if (angel_target == werewolf_victim) {
@@ -654,46 +762,48 @@ print_game_summary <- function(game) {
             messages <- append(messages, "{\"    \"}They (benignly) {yellow saved} {angel_target}!\n")
           }
           
+          
         } else if (this_players_role == "witch") {
+          
           if (is.na(witch_save)) {
-            has_already_used_save <- game %>%
+            has_already_saved <- game %>%
               filter(round_num < n,
                      is_witch_save) %>%
               nrow() 
-            if (has_already_used_save > 0) {
+            if (has_already_saved > 0) {
               messages <- append(messages, "{\"    \"}They already used their save.\n")
             } else {
               messages <- append(messages, "{\"    \"}They chose to not use their save.\n")
             }
-            
-            
           } else {
              messages <- append(messages, "{\"    \"}They chose to {green save} Player {witch_save} from the werewolves.\n")
           }
-        }
-        
-        # Passive
-        if (this_player_this_night$is_voted_off) {
-          messages <- append(messages, "{\"    \"}They were {red voted off}.\n")
-        }
-        
-        if (this_player_this_night$is_werewolf_victim) {
-          if (this_player_this_night$is_angel_target) {
-            messages <- append(messages, "{\"    \"}They were {yellow attacked} by werewolves but {green saved} by the Angel.\n")
-          } else if (this_player_this_night$is_witch_save) {
-            messages <- append(messages, "{\"    \"}They were {yellow attacked} by werewolves but {green saved} by the Witch.\n")
+          
+          if (is.na(witch_kill)) {
+            has_already_killd <- game %>%
+              filter(round_num < n,
+                     is_witch_kill) %>%
+              nrow() 
+            if (has_already_killd > 0) {
+              messages <- append(messages, "{\"    \"}They already used their kill.\n")
+            } else {
+              messages <- append(messages, "{\"    \"}They chose to not use their kill.\n")
+            }
           } else {
-            messages <- append(messages, "{\"    \"}They were {red killed} by werewolves.\n")
+            messages <- append(messages, "{\"    \"}They chose to {red kill} Player {witch_kill}.\n")
           }
         }
         
-        if (this_player_this_night$is_angel_target) {
-          if (this_player_this_night$is_werewolf_victim) {
-            messages <- append(messages, "{\"    \"}They were attacked by werewolves but {green saved} by the Angel!\n")
-          } else {
-            messages <- append(messages, "{\"    \"}They were (benignly) {yellow saved} by the Angel!\n")
-          }
-        }
+        
+        # For things that happened to them, get that message.
+        player_nom <- "They"
+        player_acc <- "them"
+        passive_message <- this_player_this_night %>%
+          left_join(combos, 
+                    by = c("is_werewolf_victim", "is_angel_target", "is_witch_save", "is_witch_kill")) %>%
+          pull(message)
+        messages <- append(messages, paste0("{\"    \"}", passive_message))
+        
         
         # If anything happened, remove the "(nothing)" part of the list.
         if (length(messages) != 3) {
@@ -711,7 +821,6 @@ print_game_summary <- function(game) {
 }
 print_game_summary(game)
 ```
-
 
 ## Simulate many games
 
@@ -754,18 +863,21 @@ run_simulation <- function(n_sims = 100, n_players = 15, n_werewolves = 3, other
 
 Here's where I actually run the simulation.
 
+Stats: 
+
+* In the old version, I could do 19000 simulations in 40 minutes, or about 8.3 games per second.
+
+* With the new version, it takes 55 minutes for 1890 simulations, or 1.75sec per game (like 14 times lower). Yikes. If I want to take this further, I need to really figure out how to cut down on processing time.
+
 ```{r}
 start_time <- Sys.time()
-# Takes about {10.7} minutes for 7750 simulations (12/s). (werewolf only)
-# Takes about {26.3, 25.8, 28.6, 41.4} minutes for 19000 simulations (12/s). (werewolf, angel)
-# Takes about {38.1} minutes for 19000 simulations (8.3/s). (werewolf, angel, witch(save))
-name <- "Werewolves, 1 Angel, and Townspeople"
-sims <- expand.grid(n_players = 3:40, n_werewolves = c(1:20)) %>% # 3:40 players, 1:20 werewolves
+name <- "Werewolves, 1 Angel, 1 Witch, and Townspeople"
+sims <- expand.grid(n_players = 5:40, n_werewolves = c(1:20)) %>% # 3:40 players, 1:20 werewolves
   filter(n_players > n_werewolves * 2) %>%
-  add_column(n_sims = 50) %>% # 50 simulations
+  add_column(n_sims = 5) %>% # 50 simulations
   rowid_to_column("sim_group_id") %>%
   mutate(game_collection = pmap(list(n_sims, n_players, n_werewolves), run_simulation, 
-                                other_roles = "angel")) %>%
+                                other_roles = "default")) %>%
   print()
 Sys.time() - start_time
 ```
@@ -799,6 +911,8 @@ sims_summary <- sims %>%
   print()
 ```
 
+## Load and save if needed
+
 Save this game for later.
 
 ```{r}
@@ -816,6 +930,7 @@ sims_summary <- read_csv(paste0("simulations/", name, ".csv"))
 n_sims <- sims_summary %>% pull(n_sims) %>% sum()
 ```
 
+## Visualize
 
 Actually make the plot.
 
@@ -841,7 +956,7 @@ p
 ```
 
 ```{r}
-ggsave(p, paste0("plots/", name, ".pdf"), height = 4, width = 6)
+ggsave(paste0("plots/", name, ".pdf"), plot = p, height = 4, width = 6)
 ```
 
 For the blog post.
@@ -855,4 +970,27 @@ p + coord_cartesian() +
   ggsave(filename = paste0("plots/", name, ".jpeg"), height = 4, width = 6, dpi = 300)
 ```
 
+## Combo info
+
+```{r, warning = FALSE}
+combo_stats <- sims %>%
+  unnest() %>%
+  unnest() %>%
+  left_join(combos, by = c("is_werewolf_victim", "is_angel_target", "is_witch_save", "is_witch_kill")) %>%
+  group_by(combo, message) %>%
+  count() %>%
+  ungroup() %>%
+  mutate(n_per_game = round(n / n_sims, 3),
+         one_in_n_games = ceiling(n_sims / n),
+         message = str_replace_all(message, "\\{player_nom", "They"),
+         message = str_replace_all(message, "\\{player_acc", "them"),
+         message = str_replace_all(message, "\\{silver", ""),
+         message = str_replace_all(message, "\\{red ", ""),
+         message = str_replace_all(message, "\\{yellow ", ""),
+         message = str_replace_all(message, "\\{green ", ""),
+         message = str_replace_all(message, "\\}", "")) %>%
+  arrange(-n) %>%
+  print()
+View(combo_stats)
+```
 

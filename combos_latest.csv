@@ -1,0 +1,17 @@
+combo,compatible,message,result,killer,notes,is_werewolf_victim,is_angel_target,is_witch_save,is_witch_kill
+1,TRUE,{silver Nothing happened to {player_acc}.},live,,,FALSE,FALSE,FALSE,FALSE
+2,TRUE,{player_nom} were {red killed} by the werewolves,die,werewolves,,TRUE,FALSE,FALSE,FALSE
+3,TRUE,{player_nom} were benignly {yellow saved} by the Angel.,live,,,FALSE,TRUE,FALSE,FALSE
+4,TRUE,{player_nom} were {yellow attacked} by the werewolves but then {green saved} by the Angel.,live,,,TRUE,TRUE,FALSE,FALSE
+5,FALSE,{red ERROR:} {player_nom} were saved by the Witch with no werewolf attack.,live,,Witch can't save if they're not the werewolf victim.,FALSE,FALSE,TRUE,FALSE
+6,TRUE,{player_nom} were {yellow attacked} by the werewolves but then {green saved} by the Witch.,live,,,TRUE,FALSE,TRUE,FALSE
+7,FALSE,{red ERROR:} {player_nom} were saved by the Witch with no werewolf attack. (The Angel also benignly saved them.),live,,Witch doesn't get a chance to save if the Angel already did.,FALSE,TRUE,TRUE,FALSE
+8,FALSE,{red ERROR:} {player_nom} were saved by the Witch after the Angel already saved them.,live,,Witch doesn't get a chance to save if the Angel already did.,TRUE,TRUE,TRUE,FALSE
+9,TRUE,{player_nom} were {red killed} by the Witch.,die,witch,,FALSE,FALSE,FALSE,TRUE
+10,TRUE,{player_nom} were {red killed} by the werewolves AND the Witch! Double whammy!,die,werewolves and witch,This is highly unlikely because the Witch will already know they're the werewolf victim.,TRUE,FALSE,FALSE,TRUE
+11,TRUE,"The Angel {yellow tried} to save {player_acc}, but the Witch's stronger power {red killed} {player_acc}.",die,witch,Witch kill overpowers Angel save.,FALSE,TRUE,FALSE,TRUE
+12,TRUE,{player_nom} were {yellow attacked} by the werewolves but then {yellow saved} by the Angel. Then the Witch went ahead and {red killed} {player_acc}!,die,witch,Witch kill overpowers Angel save.,TRUE,TRUE,FALSE,TRUE
+13,FALSE,{red ERROR:} {player_nom} were saved by the Witch with no werewolf attack. (The Witch then turned around and killed them.},die,witch,Witch can't save if they're not the werewolf victim.,FALSE,FALSE,TRUE,TRUE
+14,TRUE,{player_nom} were {yellow attacked} by the werewolves but then {yellow saved} by the Witch. Then the Witch turned around and {red killed} {player_acc}!,die,witch,The Carson move!,TRUE,FALSE,TRUE,TRUE
+15,FALSE,{red ERROR:} {player_nom} were saved by the Witch with no werewolf attack. (They were also saved by the Angel and the Witch then turned around and killed them.},live,,Witch doesn't get a chance to save if the Angel already did.,FALSE,TRUE,TRUE,TRUE
+16,FALSE,{red ERROR:} {player_nom} were saved by the Witch after the Angel already saved them. (The Witch then turned around and killed them.),die,witch,Witch doesn't get a chance to save if the Angel already did.,TRUE,TRUE,TRUE,TRUE
