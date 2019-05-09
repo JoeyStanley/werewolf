@@ -16,9 +16,8 @@ This is a simulation of the Warewolf game. I was talking to Kyle for a while on 
 
 ```{r, message = FALSE}
 library(tidyverse)
-library(glue)
-library(crayon)
-library(scico)
+library(glue)   # Easy printing
+library(crayon) # Printing messages in color
 ```
 
 ## Purpose and Goal
@@ -42,13 +41,16 @@ This script will serve as a sandbox to help me work out the R stuff. Once I'm do
 * Witch
   + Save (5/5/19)
   + Kill (5/7/19)
-* Dungeon Master
-  + Puts others in Dunegeon (5/8/19)
+* Dungeon Master (5/8/19)
+  + Puts others in Dunegeon 
+* Priest (5/9/19)
+  + Puts other in Sanctuary 
+  + Sanctuary protects from being voted off
   
 ## To do
 
 *Roles that add to the logic*
-* Apothecary---easy
+* Apothecary---easy potions
   + water, save, kill, wine
 * Angel
   + always saves self
@@ -61,10 +63,9 @@ This script will serve as a sandbox to help me work out the R stuff. Once I'm do
   + Lone Wolf
 
 *These have little effects on the logic*
-* Priest
 * Detective
 * Jester
-* Apothecary---novelty
+* Apothecary---novelty potions
   + amnesiac, truth serum
 * Additional Werewolves
   + Vegetarian Wolf
@@ -74,8 +75,9 @@ This script will serve as a sandbox to help me work out the R stuff. Once I'm do
 * Giant
 * Hunter
 * Cupid
-* Apothecary---difficult
-  + love potion 
+* Apathetic Lover
+* Apothecary---difficult potions
+  + love potion, with Apothecary as apathetic lover
 
 *Switching Roles*---These will be especially difficult to implement. I have no idea how I'll do it to be honest.
 * Silversmith
@@ -88,6 +90,8 @@ This script will serve as a sandbox to help me work out the R stuff. Once I'm do
 * Dungeon Master
   + Themselves always in Dungeon
   + People in dungeon are immune from Hunter, Town Drunk, and Giant
+* Priest
+  + People in sanctuary are immune from Hunter, Town Drunk, and Giant
 
 
 
@@ -113,12 +117,22 @@ pad_with_townspeople(c("werewolf", "werewolf"), "angel", end_length = 5)
 new_game <- function(n_players = 12, n_werewolves = 4, other_roles = "default") {
   n_nights <- n_players
   
+  non_essential_roles <- c("angel", "witch", "priest", "dungeon master")
+  
   if (missing(other_roles) || other_roles == "default") {
-    list_of_roles <- pad_with_townspeople(rep("werewolf", n_werewolves), 
-                                          "angel", 
-                                          "witch",
-                                          "dungeon master",
-                                          end_length = n_players)
+    # If there are fewer players than there are roles, randomly choose some and don't use townspeople.
+    if (n_players < (length(non_essential_roles) + n_werewolves)) {
+      n_nonessential_roles_needed <- n_players - n_werewolves
+      list_of_roles <- c(rep("werewolf", n_werewolves), 
+                         sample(non_essential_roles, n_nonessential_roles_needed))
+      # If there are ots of players, use all non_essential roles, plus townspeople.
+    } else {
+      list_of_roles <- pad_with_townspeople(rep("werewolf", n_werewolves), 
+                                            non_essential_roles,
+                                            end_length = n_players)
+    }
+    
+    
   } else if (length(other_roles) == 1 && other_roles == "none") {
     list_of_roles <- pad_with_townspeople(rep("werewolf", n_werewolves),
                                           end_length = n_players)
@@ -143,6 +157,8 @@ new_game <- function(n_players = 12, n_werewolves = 4, other_roles = "default") 
            
            is_dungmast_target = FALSE,
            is_in_dungeon      = FALSE,
+           is_priest_target   = FALSE,
+           is_in_sanctuary     = FALSE,
            
            is_voted_off       = FALSE) %>%
     left_join(players_and_roles, by = "player_id") %>%
@@ -365,6 +381,18 @@ dungmast_target_id <- function(game, this_round_num) {
 dungmast_target_id(game, 1)
 ```
 
+```{r}
+priest_target_id <- function(game, this_round_num) {
+  available_targets <- game %>%
+    filter(round_num == this_round_num,
+           is.na(cause_of_death)) %>%
+    pull(player_id)
+  
+  n_targets <- 1
+  sample(available_targets, n_targets)
+}
+priest_target_id(game, 1)
+```
 
 
 
@@ -452,10 +480,31 @@ put_in_dungeon <- function(game, this_round_num) {
     if (n_dungmasts > 0) {
       game[game$player_id == dungmast_target_id(game, this_round_num) & 
              game$round_num == this_round_num,"is_dungmast_target"] <- TRUE
+      # Currently, is_in_dungeon and is_dungmast_target are always identical. Not sure if I need to combine them or if it would be good to keep them separate for things down the road.
+      game[game$player_id == dungmast_target_id(game, this_round_num) & 
+             game$round_num == this_round_num,"is_in_dungeon"] <- TRUE
     }
   game
 }
 put_in_dungeon(game, 1)
+```
+
+```{r}
+put_in_santuary <- function(game, this_round_num) {
+  
+  # First get the number of angels remaining in the game
+  n_priests <- get_n_role(game, this_round_num, "priest")
+    
+    # If there is more than zero
+    if (n_priests > 0) {
+      game[game$player_id == priest_target_id(game, this_round_num) & 
+             game$round_num == this_round_num,"is_priest_target"] <- TRUE
+      game[game$player_id == priest_target_id(game, this_round_num) & 
+             game$round_num == this_round_num,"is_in_sanctuary"] <- TRUE
+    }
+  game
+}
+put_in_santuary(game, 1)
 ```
 
 
@@ -466,7 +515,8 @@ everyone_do_their_thing <- function(game, this_round_num, verbose = TRUE) {
     make_angel_save(this_round_num) %>%
     make_witch_save(this_round_num) %>%
     make_witch_kill(this_round_num) %>%
-    put_in_dungeon(this_round_num)
+    put_in_dungeon(this_round_num) %>%
+    put_in_santuary(this_round_num)
 }
 everyone_do_their_thing(game, 1)
 ```
@@ -526,6 +576,15 @@ get_dungmast_target <- function(game, this_round_num) {
 }
 ```
 
+```{r}
+get_priest_target <- function(game, this_round_num) {
+  target_id <- game[game$is_priest_target == TRUE & game$round_num == this_round_num,]$player_id
+  
+  # If there was no target, it's "integer(0)", which has a length of 0. Return NA instead.
+  ifelse(length(target_id) > 0, target_id, NA)
+}
+```
+
 
 ## Mark people as dead
 
@@ -572,7 +631,7 @@ run_logic <- function(game, this_round_num, verbose = TRUE) {
 
     this_players_role <- game[game$player_id %in% p,]$role[[1]]
     player_message <- glue_col("{blue Player {str_pad(p, side = 'left', width = 2)}} is a {blue {this_players_role}}") %>%
-      str_pad(width = 45, side = "right")
+      str_pad(width = 46, side = "right")
 
     this_player_this_night <- game %>%
       filter(round_num == this_round_num,
@@ -585,6 +644,7 @@ run_logic <- function(game, this_round_num, verbose = TRUE) {
       witch_save      <- get_witch_save(game, this_round_num)
       witch_kill      <- get_witch_kill(game, this_round_num)
       dungmast_target <- get_dungmast_target(game, this_round_num)
+      priest_target   <- get_priest_target(game, this_round_num)
 
       # For things that happened to them, get that message.
       player_nom <- glue("They")
@@ -601,6 +661,13 @@ run_logic <- function(game, this_round_num, verbose = TRUE) {
           passive_message <- "They were put in the Dungeon."
         } else {
           passive_message <- paste(passive_message, "They were also put in the Dungeon.")
+        }
+      }
+      if (identical(p, priest_target)) {
+        if (str_detect(passive_message, "Nothing happened")) {
+          passive_message <- "They were put into Sanctuary."
+        } else {
+          passive_message <- paste(passive_message, "They were also put into Sanctuary.")
         }
       }
 
@@ -655,6 +722,7 @@ The daytime phase is going to be simpler. Cast the votes. For now, the vote will
 cast_votes <- function(game, this_round_num) {
   available_nominees <- game %>%
     filter(round_num == this_round_num,
+           !is_in_sanctuary, # <- people in Sanctuary can't be voted off
            is.na(cause_of_death)) %>%
     pull(player_id)
   
@@ -828,7 +896,8 @@ print_game_summary <- function(game) {
         witch_save      <- get_witch_save(game, n)
         witch_kill      <- get_witch_kill(game, n)
         dungmast_target <- get_dungmast_target(game, n)
-        
+        priest_target   <- get_priest_target(game, n)
+          
         # Start with a vector of length 3. Later, the second element will be deleted if needed.
         messages <- list("{\"  \"}Round {n}:",
                          " (nothing)",
@@ -892,6 +961,9 @@ print_game_summary <- function(game) {
           
         } else if (this_players_role == "dungeon master") {
             messages <- append(messages, "{\"    \"}They put Player {dungmast_target} in the dungeon\n")
+            
+        } else if (this_players_role == "priest") {
+            messages <- append(messages, "{\"    \"}They put Player {priest_target} into sanctuary\n")
         }
         
         
@@ -971,10 +1043,10 @@ Stats:
 
 ```{r}
 start_time <- Sys.time()
-name <- "Werewolves, 1 Angel, 1 Witch, and Townspeople"
-sims <- expand.grid(n_players = 5:40, n_werewolves = c(1:20)) %>% # 3:40 players, 1:20 werewolves
+name <- "Werewolves, Angel, Witch, Dungeon Master, Priest, and Townspeople"
+sims <- expand.grid(n_players = 12:15, n_werewolves = c(3:4)) %>% # 3:40 players, 1:20 werewolves
   filter(n_players > n_werewolves * 2) %>%
-  add_column(n_sims = 5) %>% # 50 simulations
+  add_column(n_sims = 2) %>% # 50 simulations
   rowid_to_column("sim_group_id") %>%
   mutate(game_collection = pmap(list(n_sims, n_players, n_werewolves), run_simulation, 
                                 other_roles = "default")) %>%
